@@ -6,3 +6,4 @@ python main.py --write-image-immediate ./toffee.png
 python3 main.py --help for a list of commands
 
 open "qmk console" to see the debug output of the keyboard
+test
