@@ -19,13 +19,12 @@ PING_MAGIC = 0x09
 PING_COMMAND_ID = 0x5F
 
 def send_ping(ser):
-    """Send a PING packet and return the response."""
     packet_id = 0
     header = struct.pack("<BBI", PING_MAGIC, PING_COMMAND_ID, packet_id)
     ser.reset_input_buffer()
     ser.write(header)
     ser.flush()
-    time.sleep(0.1)  # Allow the board time to respond
+    time.sleep(1.0)  # Increased delay for CDC initialization and processing
     response = ser.read_all()
     return response
 
