@@ -243,7 +243,8 @@ def image_to_rgb565(image: Image.Image, background_color: Tuple[int, int, int] =
         g6 = g >> 2
         b5 = b >> 3
         rgb565 = (r5 << 11) | (g6 << 5) | b5
-        image_data.extend(struct.pack('<H', rgb565))
+        # Use big-endian packing for RGB565
+        image_data.extend(struct.pack('>H', rgb565))
         processed_pixels.append((r, g, b))
 
     processed_image = Image.new('RGB', image.size)
@@ -275,7 +276,8 @@ def image_to_rgb565_quantized(image: Image.Image, background_color: Tuple[int, i
             if (min_dist is None) or (dist < min_dist):
                 min_dist = dist
                 closest_color = colors_rgb565[i]
-        image_data.extend(struct.pack('<H', closest_color))
+        # Use big-endian packing for RGB565
+        image_data.extend(struct.pack('>H', closest_color))
         processed_pixels.append(rgb565_to_rgb(closest_color))
 
     processed_image = Image.new('RGB', image.size)
@@ -293,7 +295,8 @@ def create_colored_bars_image(width: int, height: int) -> bytes:
     for y in range(height):
         for x in range(width):
             color_index = (x // bar_width) % len(colors)
-            image_data.extend(struct.pack('<H', colors[color_index]))
+            # Use big-endian packing for RGB565
+            image_data.extend(struct.pack('>H', colors[color_index]))
     return bytes(image_data)
 
 def create_animated_bars(width: int, height: int, num_frames: int) -> bytes:
@@ -308,7 +311,8 @@ def create_animated_bars(width: int, height: int, num_frames: int) -> bytes:
         for y in range(height):
             for x in range(width):
                 color_index = ((x + offset) // 16) % len(colors)
-                image_data.extend(struct.pack('<H', colors[color_index]))
+                # Use big-endian packing for RGB565
+                image_data.extend(struct.pack('>H', colors[color_index]))
     return bytes(image_data)
 
 def write_image_to_file(fs: FileSystem, image_data: bytes) -> bool:
