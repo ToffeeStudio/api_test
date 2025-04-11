@@ -6,6 +6,10 @@ import sys
 import os
 from enum import IntEnum
 from typing import List, Tuple, Optional
+import serial
+import serial.tools.list_ports
+import struct
+import time
 
 try:
     from PIL import Image
@@ -339,6 +343,7 @@ def find_qmk_device(vid, pid, usage_page, usage):
                     print("Found QMK console device:", d)
                     return d
     return None
+
 
 def main():
     VID = 0x1067  # (4199) Vendor ID for your device
