@@ -33,6 +33,8 @@ class CommandID(IntEnum):
     MODULE_CMD_CHOOSE_IMAGE = 0x5C
     MODULE_CMD_WRITE_DISPLAY = 0x5D
     MODULE_CMD_SET_TIME = 0x5E
+    MODULE_CMD_PING = 0x5F
+    MODULE_CMD_LS_NEXT = 0x60
 
 class ReturnCode(IntEnum):
     SUCCESS = 0x00
@@ -46,6 +48,7 @@ class ReturnCode(IntEnum):
     IMAGE_PACKET_ID_ERR = 0xE8
     FLASH_REMAINING = 0xE9
     INVALID_COMMAND = 0xEF
+    MORE_ENTRIES = 0xEA
 
 PACKET_SIZE = 32  # Adjust this to match RAW_EPSIZE on your device
 HEADER_SIZE = 6   # Magic number (1 byte) + Command ID (1 byte) + Packet ID (4 bytes)
@@ -123,19 +126,40 @@ class HIDDevice:
         status, response = self.receive_packet()
         if status is None:
             return ReturnCode.INVALID_COMMAND, None
-        return ReturnCode.SUCCESS, response
-
+        # Return the actual status code we received
+        return ReturnCode(status), response
 
 class FileSystem:
     def __init__(self, hid_device: HIDDevice):
         self.hid = hid_device
 
     def ls(self) -> List[str]:
+        all_entries = []
+        
+        # Request first page
         ret_code, response = self.hid.execute_command(CommandID.MODULE_CMD_LS)
-        if ret_code == ReturnCode.SUCCESS and response:
-            return response.decode('utf-8', errors='ignore').strip('\x00').split('\x00')
-        else:
+        
+        if ret_code not in [ReturnCode.SUCCESS, ReturnCode.MORE_ENTRIES]:
             return []
+        
+        # Parse entries from the first page
+        if response:
+            entries = response.decode('utf-8', errors='ignore').strip('\x00').split('\x00')
+            entries = [e for e in entries if e]  # Filter out empty entries
+            all_entries.extend(entries)
+        
+        # Keep requesting more pages while the firmware indicates there are more entries
+        while ret_code == ReturnCode.MORE_ENTRIES:
+            ret_code, response = self.hid.execute_command(CommandID.MODULE_CMD_LS_NEXT)
+            if ret_code not in [ReturnCode.SUCCESS, ReturnCode.MORE_ENTRIES]:
+                break
+            
+            if response:
+                entries = response.decode('utf-8', errors='ignore').strip('\x00').split('\x00')
+                entries = [e for e in entries if e]
+                all_entries.extend(entries)
+        
+        return all_entries
 
     def cd(self, directory: str) -> bool:
         ret_code, _ = self.hid.execute_command(CommandID.MODULE_CMD_CD, directory.encode())
