@@ -4,7 +4,6 @@ import struct
 import argparse
 import sys
 import os
-import subprocess
 from enum import IntEnum
 from typing import List, Tuple, Optional
 import serial
@@ -36,7 +35,6 @@ class CommandID(IntEnum):
     MODULE_CMD_SET_TIME = 0x5E
     MODULE_CMD_PING = 0x5F
     MODULE_CMD_LS_NEXT = 0x60
-    MODULE_CMD_DUMP_FILES_CDC = 0x61
 
 class ReturnCode(IntEnum):
     SUCCESS = 0x00
@@ -399,8 +397,6 @@ def main():
     parser.add_argument("--write-image-file", help="Write an image to a file on the device")
     parser.add_argument("--quantize", action="store_true", help="Quantize image colors to specific colors")
     parser.add_argument("--background-color", type=str, default="0,0,0", help="Background color for transparency (format: R,G,B)")
-    parser.add_argument("--lsfull", action="store_true", help="List files (HID) and retrieve all file contents (CDC) to a local folder.")
-    parser.add_argument("--output-dir", default="./qmk_fs_dump", help="Output directory for --lsfull command.")
 
     args = parser.parse_args()
     background_color = tuple(map(int, args.background_color.split(',')))
@@ -485,63 +481,6 @@ def main():
                 print(f"Wrote image to {output_filename}: {'Success' if success else 'Failed'}")
             else:
                 print("Failed to open file for writing image")
-        elif args.lsfull:
-            print("--- Executing lsfull ---")
-            print("Step 1: Listing files using HID (--ls logic)...")
-            file_list = fs.ls()
-            if not file_list:
-                print("No files found on device or error during listing.")
-            else:
-                print("Files found via HID:")
-                for entry in file_list:
-                    print(f"  - {entry}")
-
-                print("\nStep 2: Triggering file dump over CDC...")
-                ret_code, _ = fs.hid.execute_command(CommandID.MODULE_CMD_DUMP_FILES_CDC)
-                if ret_code == ReturnCode.SUCCESS:
-                    print("-> Firmware acknowledged CDC dump command.")
-                    # Add a small delay to allow firmware to start sending
-                    time.sleep(0.5)
-
-                    print("\nStep 3: Launching CDC receiver script...")
-                    output_directory = args.output_dir
-                    print(f"Output directory: {output_directory}")
-                    # Ensure the output directory exists
-                    os.makedirs(output_directory, exist_ok=True)
-
-                    # Construct the command to run receive_cdc.py
-                    # Use sys.executable to ensure using the same python interpreter
-                    receiver_script = os.path.join(os.path.dirname(__file__), 'receive_cdc.py')
-                    cmd = [sys.executable, receiver_script, output_directory]
-                    # Add optional VID/PID if you want to pass them from main.py args
-                    # cmd.extend(["--vid", hex(VID), "--pid", hex(PID)])
-
-                    print(f"Running command: {' '.join(cmd)}")
-                    try:
-                        # Run the receiver script and wait for it to complete
-                        result = subprocess.run(cmd, check=True, text=True, capture_output=True)
-                        print("\n--- CDC Receiver Output ---")
-                        print(result.stdout)
-                        if result.stderr:
-                             print("\n--- CDC Receiver Errors ---")
-                             print(result.stderr)
-                        print("--------------------------")
-                        print("\nStep 4: CDC receiver script finished.")
-
-                    except subprocess.CalledProcessError as e:
-                        print(f"\nERROR: CDC receiver script failed with exit code {e.returncode}")
-                        print("\n--- CDC Receiver Output (Error) ---")
-                        print(e.stdout)
-                        print("\n--- CDC Receiver Stderr (Error) ---")
-                        print(e.stderr)
-                        print("---------------------------------")
-                    except FileNotFoundError:
-                         print(f"\nERROR: Could not find the receiver script '{receiver_script}'. Make sure it's in the same directory.")
-                    except Exception as e:
-                         print(f"\nERROR: An unexpected error occurred while running the receiver script: {e}")
-
-                else:
-                    print(f"ERROR: Firmware returned error code {ret_code} when triggering CDC dump.")
         else:
             parser.print_help()
 
