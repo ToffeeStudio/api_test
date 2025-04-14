@@ -33,7 +33,6 @@ class CommandID(IntEnum):
     MODULE_CMD_CHOOSE_IMAGE = 0x5C
     MODULE_CMD_WRITE_DISPLAY = 0x5D
     MODULE_CMD_SET_TIME = 0x5E
-    MODULE_CMD_PING = 0x5F
     MODULE_CMD_LS_NEXT = 0x60
 
 class ReturnCode(IntEnum):
