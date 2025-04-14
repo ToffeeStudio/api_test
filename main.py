@@ -10,6 +10,7 @@ import serial
 import serial.tools.list_ports
 import struct
 import time
+# random
 
 try:
     from PIL import Image
