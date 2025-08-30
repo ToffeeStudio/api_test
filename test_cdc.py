@@ -238,16 +238,16 @@ def main():
 
             for i, frame in enumerate(ImageSequence.Iterator(img)):
                 frame_count += 1
-                # Print progress during frame processing if total is known
-                if total_frames > 0:
-                    print(f"Processing frame {frame_count}/{total_frames}...")
-                else:
-                    print(f"Processing frame {frame_count}...")
-
+                print(f"--- Python Frame {i} ---")
+                print(f"  - Info: {frame.info}")
+                
                 processed_frame_data = process_image_frame(frame, target_size, bg_color)
                 if not processed_frame_data:
                     raise ValueError(f"Failed to process frame {frame_count}")
+
+                print(f"  - RGB565 Sample (first 32 bytes): {processed_frame_data[:32].hex()}")
                 output_data.extend(processed_frame_data)
+
             if frame_count == 0:
                  print("Warning: Animated file reported, but no frames found/processed.")
             print(f"Processed {frame_count} frames.")

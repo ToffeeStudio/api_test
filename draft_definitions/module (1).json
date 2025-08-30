@@ -1,0 +1,165 @@
+[
+  {
+    "name": "Module"
+  },
+  [
+    {
+      "x": 3,
+      "a": 0
+    },
+    "~\n`\n\n\n0\n0",
+    "!\n1\n\n\n1\n0",
+    "@\n2\n\n\n0\n5",
+    "#\n3\n\n\n1\n5",
+    "$\n4\n\n\n0\n4",
+    "%\n5\n\n\n1\n4",
+    "^\n6\n\n\n0\n3",
+    "&\n7\n\n\n1\n3",
+    "*\n8\n\n\n0\n2",
+    "(\n9\n\n\n1\n2",
+    ")\n0\n\n\n0\n1",
+    "_\n-\n\n\n1\n1",
+    "+\n=\n\n\n0\n6",
+    {
+      "c": "#cc4545",
+      "w": 2
+    },
+    "Backspace\nSplit Backspace\n\n\n1\n6\n0\n0",
+    {
+      "x": 1.75,
+      "g": true
+    },
+    "BS\n\n\n\n1\n6\n0\n1",
+    "Del\n\n\n\n0\n7\n0\n1"
+  ],
+  [
+    {
+      "x": 3,
+      "c": "#cccccc",
+      "g": false,
+      "w": 1.5
+    },
+    "Tab\n\n\n\n2\n0",
+    "Q\n\n\n\n3\n0",
+    "W\n\n\n\n2\n1",
+    "E\n\n\n\n3\n1",
+    "R\n\n\n\n2\n2",
+    "T\n\n\n\n3\n2",
+    "Y\n\n\n\n2\n3",
+    "U\n\n\n\n3\n3",
+    "I\n\n\n\n2\n4",
+    "O\n\n\n\n3\n4",
+    "P\n\n\n\n2\n5",
+    "{\n[\n\n\n3\n5",
+    "}\n]\n\n\n2\n6",
+    {
+      "w": 1.5
+    },
+    "|\n\\\n\n\n3\n6",
+    "Del\n\n\n\n2\n7"
+  ],
+  [
+    {
+      "c": "#7860a8",
+      "g": true,
+      "w": 1.25,
+      "w2": 1.75,
+      "l": true
+    },
+    "Caps Lock\n\n\n\n4\n0\n1\n1",
+    {
+      "x": 1.75,
+      "g": false,
+      "w": 1.75
+    },
+    "Caps Lock\nstepped Caps\n\n\n4\n0\n1\n0",
+    {
+      "c": "#cccccc"
+    },
+    "A\n\n\n\n5\n0",
+    "S\n\n\n\n4\n1",
+    "D\n\n\n\n5\n1",
+    "F\n\n\n\n4\n2",
+    "G\n\n\n\n5\n2",
+    "H\n\n\n\n4\n3",
+    "J\n\n\n\n5\n3",
+    "K\n\n\n\n4\n4",
+    "L\n\n\n\n5\n4",
+    ":\n;\n\n\n4\n5",
+    "\"\n'\n\n\n5\n5",
+    {
+      "w": 2.25
+    },
+    "Enter\n\n\n\n4\n6",
+    "Home\n\n\n\n4\n7"
+  ],
+  [
+    {
+      "c": "#81c79e",
+      "g": true,
+      "w": 1.25
+    },
+    "Shift\n\n\n\n7\n0\n2\n1",
+    "<\n\n\n\n6\n0\n2\n1",
+    {
+      "x": 0.75,
+      "g": false,
+      "w": 2.25
+    },
+    "Shift\n\n\n\n7\n0\n2\n0",
+    {
+      "c": "#cccccc"
+    },
+    "Z\n\n\n\n6\n1",
+    "X\n\n\n\n7\n1",
+    "C\n\n\n\n6\n2",
+    "V\n\n\n\n7\n2",
+    "B\n\n\n\n6\n3",
+    "N\n\n\n\n7\n3",
+    "M\n\n\n\n7\n4",
+    "<\n,\n\n\n6\n4",
+    ">\n.\n\n\n7\n5",
+    "?\n/\n\n\n6\n5",
+    {
+      "w": 1.75
+    },
+    "Shift\n\n\n\n6\n6",
+    "Up\n\n\n\n7\n6",
+    "End\n\n\n\n6\n7"
+  ],
+  [
+    {
+      "x": 3,
+      "w": 1.25
+    },
+    "Ctrl\n\n\n\n8\n0",
+    {
+      "w": 1.25
+    },
+    "Win\n\n\n\n8\n1",
+    {
+      "w": 1.25
+    },
+    "Alt\n\n\n\n8\n2",
+    {
+      "a": 3,
+      "w": 6.25
+    },
+    "\n\n\n\n8\n3",
+    {
+      "a": 0,
+      "w": 1.25
+    },
+    "RAlt\n\n\n\n8\n4",
+    {
+      "w": 1.25
+    },
+    "MO(1)\n\n\n\n8\n5",
+    {
+      "x": 0.5
+    },
+    "left\n\n\n\n8\n6",
+    "Down\n\n\n\n5\n6",
+    "Right\n\n\n\n7\n7"
+  ]
+]

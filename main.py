@@ -10,7 +10,56 @@ import serial
 import serial.tools.list_ports
 import struct
 import time
+from find_cdc import find_cdc_port
+import shutil
 # random
+
+def convert_raw_to_png(raw_filepath: str, png_filepath: str, width: int = 128, height: int = 128) -> bool:
+    print(f"Attempting to convert '{os.path.basename(raw_filepath)}' to PNG...")
+    expected_bytes = width * height * 2 # 2 bytes per pixel for RGB565
+    try:
+        # Read the raw file data
+        with open(raw_filepath, 'rb') as f_raw:
+            raw_data = f_raw.read()
+
+        # Validate size
+        if len(raw_data) != expected_bytes:
+            print(f"  Error: File size mismatch for '{os.path.basename(raw_filepath)}'. Expected {expected_bytes}, got {len(raw_data)}.")
+            return False
+
+        pixels_rgb888 = []
+        # Iterate 2 bytes at a time, unpack as Big-Endian unsigned short (>H)
+        for i in range(0, len(raw_data), 2):
+            # Unpack Big-Endian short
+            rgb565 = struct.unpack('>H', raw_data[i:i+2])[0]
+
+            # Convert RGB565 to RGB888 components
+            r5 = (rgb565 >> 11) & 0x1F
+            g6 = (rgb565 >> 5)  & 0x3F
+            b5 = rgb565         & 0x1F
+
+            # Scale components to 8-bit
+            r8 = (r5 << 3) | (r5 >> 2)
+            g8 = (g6 << 2) | (g6 >> 4)
+            b8 = (b5 << 3) | (b5 >> 2)
+
+            pixels_rgb888.append((r8, g8, b8))
+
+        # Create and save PNG image using Pillow
+        img = Image.new('RGB', (width, height))
+        img.putdata(pixels_rgb888)
+        img.save(png_filepath, "PNG")
+        print(f"  Successfully converted and saved to '{os.path.basename(png_filepath)}'")
+        return True
+
+    except FileNotFoundError:
+        print(f"  Error: Raw file not found: '{raw_filepath}'")
+        return False
+    except Exception as e:
+        print(f"  Error during RAW to PNG conversion: {e}")
+        # Optionally re-raise if you want the main script to halt on conversion error
+        # raise e
+        return False
 
 try:
     from PIL import Image
@@ -35,6 +84,9 @@ class CommandID(IntEnum):
     MODULE_CMD_WRITE_DISPLAY = 0x5D
     MODULE_CMD_SET_TIME = 0x5E
     MODULE_CMD_LS_NEXT = 0x60
+    MODULE_CMD_LS_ALL = 0x61
+    MODULE_CMD_WPM_SET_ANIM = 0x77
+    MODULE_CMD_WPM_SET_CONFIG = 0x78
 
 class ReturnCode(IntEnum):
     SUCCESS = 0x00
@@ -111,7 +163,7 @@ class HIDDevice:
         self.packet_id += 1
 
     def receive_packet(self) -> Tuple[int, bytes]:
-        response = self.device.read(PACKET_SIZE, 1000)  # Timeout in ms
+        response = self.device.read(PACKET_SIZE, 1500)  # Timeout in ms
         if not response:
             print("No response received.")
             return None, None
@@ -241,6 +293,206 @@ class FileSystem:
             bytes_written += packet_size
 
         return True
+    
+    def set_wpm_anim(self, filename: str) -> bool:
+        ret_code, _ = self.hid.execute_command(CommandID.MODULE_CMD_WPM_SET_ANIM, filename.encode())
+        return ret_code == ReturnCode.SUCCESS
+
+    def set_wpm_config(self, min_wpm: int, max_wpm: int) -> bool:
+        data = struct.pack('<BB', min_wpm, max_wpm)
+        ret_code, _ = self.hid.execute_command(CommandID.MODULE_CMD_WPM_SET_CONFIG, data)
+        return ret_code == ReturnCode.SUCCESS
+
+    def ls_all(self, output_dir: str) -> List[str]:
+        """
+        Triggers firmware dump via HID, then receives all .raw/.araw files
+        over CDC using the filename/size/data protocol and saves them.
+
+        Args:
+            output_dir: The directory to save the received files.
+
+        Returns:
+            A list of file paths that were successfully received and saved.
+        """
+        saved_files = [] # Keep track of successfully saved files
+
+        # 1. Send the HID command to trigger the CDC dump
+        command_id = CommandID.MODULE_CMD_LS_ALL # 0x61
+        print(f"[ls_all] Sending command 0x{command_id:02X} via HID...")
+        try:
+            self.hid.send_packet(command_id)
+            print("[ls_all] HID command sent.")
+            # Keep a delay allowing firmware/OS to potentially set up CDC
+            # The firmware also has a 1000ms delay now. 0.5s here might still be good.
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"[ls_all] Error sending HID command: {e}")
+            return saved_files # Return empty list on HID error
+
+        # 2. Find the CDC serial port
+        print("[ls_all] Searching for CDC port...")
+        port = find_cdc_port(vid=self.hid.vid, pid=self.hid.pid)
+        if not port:
+            print("[ls_all] Error: CDC serial port not found.")
+            print("[ls_all] Please ensure the device is connected and the firmware has initialized the CDC interface.")
+            return saved_files # Return empty list if port not found
+
+        print(f"[ls_all] Found CDC port: {port}")
+
+        print(f"[ls_all] Preparing output directory: '{output_dir}'")
+        try:
+            if os.path.exists(output_dir):
+                if os.path.isdir(output_dir):
+                    print(f"[ls_all] Clearing existing directory: '{output_dir}'...")
+                    shutil.rmtree(output_dir) # Remove the directory and all its contents
+                    print(f"[ls_all] Directory cleared.")
+                else:
+                    # It exists but is a file - remove it
+                    print(f"[ls_all] Output path '{output_dir}' exists but is a file. Removing it...")
+                    os.remove(output_dir)
+                    print(f"[ls_all] File removed.")
+            # Recreate the directory after ensuring it's gone (or never existed)
+            os.makedirs(output_dir, exist_ok=True)
+            print(f"[ls_all] Ensured output directory exists.")
+        except OSError as e:
+            print(f"\n[ls_all] ERROR: Could not clear or create output directory '{output_dir}': {e}")
+            print("[ls_all] Aborting file transfer.")
+            return saved_files # Return empty list if directory prep fails
+
+        # --- 3. Receive Files via CDC (Adapted from receive_cdc.py) ---
+        print(f"[ls_all] Opening {port} to receive files...")
+        print(f"[ls_all] Saving files to: {output_dir}")
+        os.makedirs(output_dir, exist_ok=True) # Ensure output directory exists
+
+        files_received_count = 0
+        total_bytes_received = 0
+        ser = None # Initialize serial object outside try
+
+        # Define timeouts (can be adjusted)
+        # Timeout between filename/size/termination signal
+        READ_TIMEOUT_INTER_FILE = 5 # Seconds
+        # Timeout while receiving data chunks for a single file
+        READ_TIMEOUT_DATA = 2      # Seconds
+
+        try:
+            # Use a longer timeout initially when waiting for the first filename
+            with serial.Serial(port, 115200, timeout=READ_TIMEOUT_INTER_FILE) as ser:
+                print(f"[ls_all] Serial port {port} opened. Waiting for first filename...")
+
+                while True:
+                    # 3a. Receive Filename (null-terminated)
+                    filename_bytes = bytearray()
+                    while True:
+                        # Read one byte at a time to detect null terminator
+                        byte = ser.read(1)
+                        if not byte: # Timeout occurred waiting for filename byte
+                            print("\n[ls_all] Timeout waiting for filename byte. Assuming transfer complete or stalled.")
+                            if files_received_count == 0:
+                                print("[ls_all] WARNING: No files received before timeout.")
+                                # Don't raise error, just break loop and finish
+                            else:
+                                print("[ls_all] Treating timeout as end-of-transfer signal.")
+                            filename_bytes = b'' # Ensure filename is empty to break outer loop
+                            break # Exit filename loop
+                        if byte == b'\0':
+                            break # End of filename
+                        filename_bytes.extend(byte)
+
+                    if not filename_bytes: # Received null byte or timed out after receiving files
+                        if files_received_count > 0 and not byte: # Check if it was timeout after success
+                             print("[ls_all] Timeout likely indicates completion.")
+                        else: # Received explicit null byte
+                             print("\n[ls_all] Received termination signal (empty filename).")
+                        break # Exit the main receiving loop
+
+                    filename = filename_bytes.decode('utf-8', errors='ignore')
+                    print(f"\n[ls_all] Received Filename: '{filename}'")
+
+                    # 3b. Receive Size (4 bytes, Little Endian)
+                    ser.timeout = READ_TIMEOUT_INTER_FILE # Reset timeout for reading size
+                    size_bytes = ser.read(4)
+                    if len(size_bytes) < 4:
+                        print(f"\n[ls_all] ERROR: Timeout or short read receiving size for '{filename}'. Expected 4 bytes, got {len(size_bytes)}.")
+                        print("[ls_all] Aborting transfer.")
+                        break # Exit the main loop
+
+                    expected_size = struct.unpack('<I', size_bytes)[0]
+                    print(f"[ls_all] Expecting Size: {expected_size} bytes")
+
+                    # 3c. Receive Data and Save File
+                    output_path = os.path.join(output_dir, filename)
+                    received_bytes = 0
+                    ser.timeout = READ_TIMEOUT_DATA # Switch to data timeout for content
+                    file_saved_successfully = False
+                    try:
+                        with open(output_path, 'wb') as f:
+                            start_time = time.time()
+                            while received_bytes < expected_size:
+                                # Read in chunks for efficiency
+                                bytes_to_read = min(4096, expected_size - received_bytes)
+                                chunk = ser.read(bytes_to_read)
+                                if not chunk: # Timeout occurred during data transfer
+                                    print(f"\n[ls_all] ERROR: Timeout receiving data for '{filename}' at {received_bytes}/{expected_size} bytes.")
+                                    raise TimeoutError(f"Timeout receiving data for {filename}")
+
+                                f.write(chunk)
+                                received_bytes += len(chunk)
+
+                                # Simple progress indicator within a file
+                                progress_percent = int((received_bytes / expected_size) * 100) if expected_size > 0 else 100
+                                print(f"... {progress_percent}% ({received_bytes}/{expected_size} bytes)", end='\r')
+
+                            # Ensure newline after progress indicator finishes
+                            print()
+                            end_time = time.time()
+                            duration = end_time - start_time
+                            rate = (received_bytes / duration / 1024) if duration > 1e-6 else float('inf')
+                            print(f"-> Saved '{output_path}' ({received_bytes} bytes) in {duration:.2f}s [{rate:.1f} KB/s]")
+                            saved_files.append(output_path) # Add to list of successful saves
+                            files_received_count += 1
+                            total_bytes_received += received_bytes
+                            file_saved_successfully = True
+
+                        # Check if the successfully saved file is a .raw file
+                        if file_saved_successfully and output_path.lower().endswith(".raw"):
+                            png_filename = os.path.splitext(output_path)[0] + ".png"
+                            # Call the helper function (defined earlier in the file)
+                            convert_raw_to_png(output_path, png_filename)
+                        elif file_saved_successfully:
+                             print(f"Skipping PNG conversion for non-.raw file: {os.path.basename(output_path)}")
+
+                    except TimeoutError:
+                        # Clean up potentially incomplete file
+                        print(f"[ls_all] Attempting to remove incomplete file: {output_path}")
+                        try:
+                            os.remove(output_path)
+                            print(f"[ls_all] Removed incomplete file: {output_path}")
+                        except OSError as e:
+                            print(f"[ls_all] Warning: Could not remove incomplete file '{output_path}': {e}")
+                        break # Abort transfer after timeout during data receive
+                    except IOError as e:
+                        print(f"\n[ls_all] ERROR: Could not write to file '{output_path}': {e}")
+                        break # Abort transfer on file write error
+                    finally:
+                        # Reset timeout for next filename/termination signal
+                         ser.timeout = READ_TIMEOUT_INTER_FILE
+
+        except serial.SerialException as e:
+            print(f"\n[ls_all] ERROR: Serial communication error on port {port}: {e}")
+            print("[ls_all]       Check device connection, ensure it's not in use elsewhere (QMK Toolbox, screen).")
+        except TimeoutError as e: # Should be caught internally now, but keep for safety
+            print(f"\n[ls_all] ERROR: Timeout occurred: {e}")
+        except Exception as e:
+            print(f"\n[ls_all] ERROR: An unexpected error occurred during CDC receive: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # No need to close ser explicitly if using 'with' statement
+            print(f"\n[ls_all] CDC Receiver process finished.")
+            print(f"[ls_all] Total files successfully received: {files_received_count}")
+            print(f"[ls_all] Total bytes received: {total_bytes_received}")
+
+        return saved_files # Return the list of successfully saved file paths
 
 
 def rgb565_to_rgb(rgb565):
@@ -395,8 +647,12 @@ def main():
     parser.add_argument("--write-test-anim", action="store_true", help="Write a 128x128 animated test pattern")
     parser.add_argument("--write-image-immediate", help="Write an image directly to the display")
     parser.add_argument("--write-image-file", help="Write an image to a file on the device")
+    parser.add_argument("--ls_all", action="store_true", help="Retrieve all .raw/.araw files via CDC using the default or specified output directory.")
+    parser.add_argument("--output-dir",metavar='DIR', default="dumped_files", help="Directory to save files for --ls_all (default: dumped_files)")
     parser.add_argument("--quantize", action="store_true", help="Quantize image colors to specific colors")
     parser.add_argument("--background-color", type=str, default="0,0,0", help="Background color for transparency (format: R,G,B)")
+    parser.add_argument("--wpm-gif", help="Set the .araw file to use for the WPM indicator.")
+    parser.add_argument("--wpm-range", nargs=2, type=int, metavar=('MIN', 'MAX'), help="Set the min and max WPM range (e.g., 20 150).")
 
     args = parser.parse_args()
     background_color = tuple(map(int, args.background_color.split(',')))
@@ -444,6 +700,7 @@ def main():
                 print(f"Wrote test image: {'Success' if success else 'Failed'}")
             else:
                 print("Failed to open file for writing test image")
+
         elif args.write_test_anim:
             image_data = create_animated_bars(128, 128, 12)  # e.g. 12 frames
             if fs.open("test_anim.araw"):
@@ -481,6 +738,34 @@ def main():
                 print(f"Wrote image to {output_filename}: {'Success' if success else 'Failed'}")
             else:
                 print("Failed to open file for writing image")
+
+        elif args.wpm_gif:
+            print(f"Setting WPM indicator animation to: {args.wpm_gif}")
+            success = fs.set_wpm_anim(args.wpm_gif)
+            print(f"Set WPM animation: {'Success' if success else 'Failed'}")
+
+        elif args.wpm_range:
+            try:
+                min_wpm, max_wpm = args.wpm_range
+                if not (0 <= min_wpm <= 255 and 0 <= max_wpm <= 255 and min_wpm < max_wpm):
+                    raise ValueError("WPM values must be between 0-255, and min must be less than max.")
+                
+                print(f"Setting WPM range to {min_wpm}-{max_wpm}")
+                success = fs.set_wpm_config(min_wpm, max_wpm)
+                print(f"Set WPM range: {'Success' if success else 'Failed'}")
+
+            except ValueError as e:
+                print(f"Error: Invalid WPM range. {e}", file=sys.stderr)
+        elif args.ls_all:
+            output_directory = args.output_dir # Get the directory from the argument value
+            print(f"Attempting to retrieve all files to directory: '{output_directory}'")
+            saved_file_list = fs.ls_all(output_directory)
+            if saved_file_list:
+                print("\nSuccessfully saved files:")
+                for f_path in saved_file_list:
+                    print(f"- {f_path}")
+            else:
+                 print("\nNo files were saved successfully.")
         else:
             parser.print_help()
 
