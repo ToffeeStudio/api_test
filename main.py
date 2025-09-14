@@ -294,12 +294,20 @@ class FileSystem:
 
         return True
     
-    def set_wpm_anim(self, filename: str) -> bool:
-        ret_code, _ = self.hid.execute_command(CommandID.MODULE_CMD_WPM_SET_ANIM, filename.encode())
+    def set_wpm_anim(self, filename: str, mode: str) -> bool:
+        mode_map = {'static': 0, 'speed': 1}
+        if mode not in mode_map:
+            print(f"Error: Invalid WPM mode '{mode}'. Use 'static' or 'speed'.")
+            return False
+        mode_byte = mode_map[mode]
+        # Payload: 1-byte mode + utf-8 encoded string
+        payload = struct.pack('<B', mode_byte) + filename.encode()
+        ret_code, _ = self.hid.execute_command(CommandID.MODULE_CMD_WPM_SET_ANIM, payload)
         return ret_code == ReturnCode.SUCCESS
 
-    def set_wpm_config(self, min_wpm: int, max_wpm: int) -> bool:
-        data = struct.pack('<BB', min_wpm, max_wpm)
+    def set_wpm_config(self, min_wpm: int, max_wpm: int, max_fps: int) -> bool:
+        # Payload: 3 bytes for min, max, and fps
+        data = struct.pack('<BBB', min_wpm, max_wpm, max_fps)
         ret_code, _ = self.hid.execute_command(CommandID.MODULE_CMD_WPM_SET_CONFIG, data)
         return ret_code == ReturnCode.SUCCESS
 
@@ -651,8 +659,8 @@ def main():
     parser.add_argument("--output-dir",metavar='DIR', default="dumped_files", help="Directory to save files for --ls_all (default: dumped_files)")
     parser.add_argument("--quantize", action="store_true", help="Quantize image colors to specific colors")
     parser.add_argument("--background-color", type=str, default="0,0,0", help="Background color for transparency (format: R,G,B)")
-    parser.add_argument("--wpm-gif", help="Set the .araw file to use for the WPM indicator.")
-    parser.add_argument("--wpm-range", nargs=2, type=int, metavar=('MIN', 'MAX'), help="Set the min and max WPM range (e.g., 20 150).")
+    parser.add_argument("--wpm-gif", nargs='+', metavar=('FILENAME.araw', 'MODE'), help="Set the WPM indicator. MODE is optional ('speed' or 'static', default is 'speed').")
+    parser.add_argument("--wpm-range", nargs='+', type=int, metavar=('MIN', 'MAX', 'FPS'), help="Set WPM range and optionally max FPS (e.g., 20 150 24).")
 
     args = parser.parse_args()
     background_color = tuple(map(int, args.background_color.split(',')))
@@ -740,22 +748,36 @@ def main():
                 print("Failed to open file for writing image")
 
         elif args.wpm_gif:
-            print(f"Setting WPM indicator animation to: {args.wpm_gif}")
-            success = fs.set_wpm_anim(args.wpm_gif)
+            filename = args.wpm_gif[0]
+            mode = 'speed' # Default mode
+            if len(args.wpm_gif) > 1:
+                mode = args.wpm_gif[1].lower()
+            
+            print(f"Setting WPM indicator animation to: '{filename}' (Mode: {mode})")
+            success = fs.set_wpm_anim(filename, mode)
             print(f"Set WPM animation: {'Success' if success else 'Failed'}")
 
         elif args.wpm_range:
-            try:
-                min_wpm, max_wpm = args.wpm_range
-                if not (0 <= min_wpm <= 255 and 0 <= max_wpm <= 255 and min_wpm < max_wpm):
-                    raise ValueError("WPM values must be between 0-255, and min must be less than max.")
-                
-                print(f"Setting WPM range to {min_wpm}-{max_wpm}")
-                success = fs.set_wpm_config(min_wpm, max_wpm)
-                print(f"Set WPM range: {'Success' if success else 'Failed'}")
+            if len(args.wpm_range) < 2:
+                print("Error: --wpm-range requires at least MIN and MAX values.", file=sys.stderr)
+            else:
+                min_wpm = args.wpm_range[0]
+                max_wpm = args.wpm_range[1]
+                max_fps = 24 # Default max_fps
+                if len(args.wpm_range) > 2:
+                    max_fps = args.wpm_range[2]
 
-            except ValueError as e:
-                print(f"Error: Invalid WPM range. {e}", file=sys.stderr)
+                try:
+                    if not (0 <= min_wpm < max_wpm <= 255 and 1 <= max_fps <= 60):
+                        raise ValueError("Values must be: 0<=MIN<MAX<=255, 1<=FPS<=60.")
+                    
+                    print(f"Setting WPM range to {min_wpm}-{max_wpm} WPM, with max {max_fps} FPS")
+                    success = fs.set_wpm_config(min_wpm, max_wpm, max_fps)
+                    print(f"Set WPM config: {'Success' if success else 'Failed'}")
+
+                except ValueError as e:
+                    print(f"Error: Invalid WPM range. {e}", file=sys.stderr)
+
         elif args.ls_all:
             output_directory = args.output_dir # Get the directory from the argument value
             print(f"Attempting to retrieve all files to directory: '{output_directory}'")
